@@ -17,6 +17,7 @@
 | Web 管理 | luci-light, luci-ssl, luci-mod-admin-full |
 | 代理 | openclash, nikki |
 | 防火墙 | luci-app-firewall, luci-app-pbr |
+| **FanchmWrt** | fwxd, kmod-fwx, luci-theme-fanchmwrt |
 | 广告过滤 | luci-app-adguardhome |
 | 网络工具 | curl, wget-ssl, tcpdump, iperf3 |
 | 系统工具 | htop, bash, nano, luci-app-package-manager |
@@ -63,7 +64,7 @@ cp feeds.conf.default feeds.conf
 ./scripts/feeds install -a
 ```
 
-**说明**: `feeds.conf.default` 已添加第三方 feed `kenzok8/openwrt-packages`，包含 openclash、nikki 等常用包。
+**说明**: `feeds.conf.default` 已添加第三方 feed `kenzok8/openwrt-packages` 和 `fanchmwrt/fanchmwrt-packages`，分别包含 openclash、nikki 等常用包以及 FanchmWrt 依赖。
 
 ### 3. 配置编译选项
 
@@ -199,6 +200,12 @@ make oldconfig
 ├── feeds.conf.default   # feeds 配置
 ├── files/               # 自定义配置文件
 │   └── etc/uci-defaults/99-lan-ip
+├── openwrt/             # OpenWrt 完整构建目录（本地）
+│   └── package/fcm/     # FanchmWrt 集成组件
+│       ├── fwx/         #   内核 DPI 模块
+│       ├── fwxd/        #   用户态守护进程
+│       ├── libfwx_common/   # 共享库
+│       └── luci-theme-fanchmwrt/  # LuCI 主题
 └── README.md            # 本文件
 ```
 
@@ -211,3 +218,58 @@ make oldconfig
 - [kenzok8/openwrt-packages](https://github.com/kenzok8/openwrt-packages)
 - [OpenClash](https://github.com/vernesong/OpenClash)
 - [nikki](https://github.com/nikkinikki-org/OpenWrt-nikki)
+- [FanchmWrt](https://github.com/fanchmwrt/fanchmwrt) — 集成 FanchmWrt 防火墙/DPI 功能
+
+## FanchmWrt 集成说明
+
+本仓库集成了 [FanchmWrt](https://github.com/fanchmwrt/fanchmwrt) 的核心组件，提供企业级防火墙和应用识别（DPI）能力：
+
+### 集成组件
+
+| 组件 | 说明 |
+|------|------|
+| `kmod-fwx` | 内核 Netfilter 模块，深度包检测（DPI） |
+| `fwxd` | 用户态守护进程，应用识别、MAC 过滤、流量记录 |
+| `libfwx_common` | 共享库，提供 UCI 配置接口 |
+| `luci-theme-fanchmwrt` | LuCI 主题，支持明暗两套图标 |
+
+### 启用方式
+
+`package/fcm/` 目录下的组件已直接放入本地构建树，无需额外 feed。编译时通过 `.config` 的以下选项控制：
+
+```bash
+CONFIG_PACKAGE_kmod-fwx=y          # 内核 DPI 模块
+CONFIG_PACKAGE_fwxd=y              # 用户态守护进程
+CONFIG_PACKAGE_libfwx_common=y      # 共享库
+CONFIG_PACKAGE_luci-theme-fanchmwrt=y  # LuCI 主题
+```
+
+### 依赖
+
+固件内置的 FanchmWrt 依赖（已在 `.config` 中启用）：
+- libsqlite3、libmosquitto-ssl、libcurl、libubus、libubox、libuci、libjson-c、libblobmsg-json、libuci-lua、lm-sensors
+
+### 运行时配置
+
+`fwxd` 守护进程提供以下功能：
+- **应用过滤**（DPI）：通过 `feature.cfg` 特征库识别数千款应用（社交、视频、游戏、购物等）
+- **MAC 过滤**：黑/白名单策略
+- **流量记录**：记录网络连接详情
+- **Ubus 接口**：供 LuCI 和 RPCD 调用
+
+配置文件位于 `/etc/config/` 下（`fwx`、`appfilter`、`macfilter` 等），首次启动时的 UCI 默认值在 `files/etc/uci-defaults/100_fwx` 中设置。
+
+### 调整或关闭
+
+如果不需要 FanchmWrt 组件，可以：
+
+```bash
+make menuconfig
+# 取消勾选以下项目：
+#   Kernel modules > Netfilter Extensions > kmod-fwx
+#   Base system > fwxd
+#   Base system > libfwx_common
+#   LuCI > Themes > luci-theme-fanchmwrt
+# 保存退出
+make -j$(nproc)
+```
